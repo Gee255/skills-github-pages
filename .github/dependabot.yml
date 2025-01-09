@@ -4,3 +4,119 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+<xml xmlns="http://www.w3.org/1999/xhtml">
+  <variables>
+    <variable type="" id="var_current_price">CURRENT PRICE</variable>
+    <variable type="" id="var_psychological_level">PSYCHOLOGICAL LEVEL</variable>
+    <variable type="" id="var_buffer">BUFFER</variable>
+  </variables>
+
+  <!-- Set Psychological Level -->
+  <block type="variables_set" id="set_psychological_level" x="10" y="10">
+    <field name="VAR" id="var_psychological_level">PSYCHOLOGICAL LEVEL</field>
+    <value name="VALUE">
+      <block type="math_number" id="set_level_value">
+        <field name="NUM">1.2000</field>
+      </block>
+    </value>
+  </block>
+
+  <!-- Set Buffer -->
+  <block type="variables_set" id="set_buffer" x="10" y="70">
+    <field name="VAR" id="var_buffer">BUFFER</field>
+    <value name="VALUE">
+      <block type="math_number" id="set_buffer_value">
+        <field name="NUM">0.0010</field>
+      </block>
+    </value>
+  </block>
+
+  <!-- Check Proximity to Psychological Level -->
+  <block type="controls_if" id="check_proximity" x="10" y="130">
+    <value name="IF0">
+      <block type="logic_operation" id="logic_and">
+        <field name="OP">AND</field>
+        <value name="A">
+          <block type="logic_compare" id="check_lower_bound">
+            <field name="OP">GTE</field>
+            <value name="A">
+              <block type="variables_get" id="get_current_price_lower">
+                <field name="VAR" id="var_current_price">CURRENT PRICE</field>
+              </block>
+            </value>
+            <value name="B">
+              <block type="math_arithmetic" id="lower_bound_calc">
+                <field name="OP">MINUS</field>
+                <value name="A">
+                  <block type="variables_get" id="get_psychological_level_lower">
+                    <field name="VAR" id="var_psychological_level">PSYCHOLOGICAL LEVEL</field>
+                  </block>
+                </value>
+                <value name="B">
+                  <block type="variables_get" id="get_buffer_lower">
+                    <field name="VAR" id="var_buffer">BUFFER</field>
+                  </block>
+                </value>
+              </block>
+            </value>
+          </block>
+        </value>
+        <value name="B">
+          <block type="logic_compare" id="check_upper_bound">
+            <field name="OP">LTE</field>
+            <value name="A">
+              <block type="variables_get" id="get_current_price_upper">
+                <field name="VAR" id="var_current_price">CURRENT PRICE</field>
+              </block>
+            </value>
+            <value name="B">
+              <block type="math_arithmetic" id="upper_bound_calc">
+                <field name="OP">PLUS</field>
+                <value name="A">
+                  <block type="variables_get" id="get_psychological_level_upper">
+                    <field name="VAR" id="var_psychological_level">PSYCHOLOGICAL LEVEL</field>
+                  </block>
+                </value>
+                <value name="B">
+                  <block type="variables_get" id="get_buffer_upper">
+                    <field name="VAR" id="var_buffer">BUFFER</field>
+                  </block>
+                </value>
+              </block>
+            </value>
+          </block>
+        </value>
+      </block>
+    </value>
+    <statement name="DO0">
+      <block type="trade_definition_tradeoptions" id="execute_trade">
+        <mutation has_first_barrier="false" has_second_barrier="false" has_prediction="true"></mutation>
+        <field name="DURATIONTYPE_LIST">t</field>
+        <value name="DURATION">
+          <block type="math_number" id="trade_duration">
+            <field name="NUM">1</field>
+          </block>
+        </value>
+        <value name="AMOUNT">
+          <block type="variables_get" id="trade_amount">
+            <field name="VAR">YOUR STAKE</field>
+          </block>
+        </value>
+        <value name="PREDICTION">
+          <block type="math_random_int" id="random_prediction">
+            <value name="FROM">
+              <block type="math_number" id="prediction_from">
+                <field name="NUM">1</field>
+              </block>
+            </value>
+            <value name="TO">
+              <block type="math_number" id="prediction_to">
+                <field name="NUM">9</field>
+              </block>
+            </value>
+          </block>
+        </value>
+      </block>
+    </statement>
+  </block>
+</xml>
