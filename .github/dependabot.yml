@@ -1,9 +1,3 @@
-version: 2
-updates:
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "monthly"
 <xml xmlns="http://www.w3.org/1999/xhtml">
   <variables>
     <variable type="" id="var_current_price">CURRENT PRICE</variable>
