@@ -1,0 +1,437 @@
+# create_deriv_bot_files.py
+import os
+from datetime import datetime
+
+def create_xml_config():
+    xml_content = '''<?xml version="1.0" encoding="UTF-8"?>
+<DerivBotConfig>
+    <!-- API Configuration -->
+    <ApiConfig>
+        <Token>YOUR_DERIV_API_TOKEN_HERE</Token>
+        <AppId>1089</AppId>
+        <WebSocketEndpoint>wss://ws.derivws.com/websockets/v3</WebSocketEndpoint>
+    </ApiConfig>
+    
+    <!-- Trading Parameters -->
+    <TradingConfig>
+        <Symbol>R_100</Symbol>
+        <Currency>USD</Currency>
+        <Stake>1.00</Stake>
+        <Duration>1</Duration>
+        <DurationUnit>t</DurationUnit>
+        <ContractType>DIGITMATCH</ContractType>
+    </TradingConfig>
+    
+    <!-- Strategy Configuration -->
+    <StrategyConfig>
+        <Name>DigitBasedTrading</Name>
+        <UnderThreshold>2</UnderThreshold>
+        <OverThreshold>7</OverThreshold>
+        <MaxTradesPerMinute>5</MaxTradesPerMinute>
+        <StopLoss>50.00</StopLoss>
+        <TakeProfit>100.00</TakeProfit>
+    </StrategyConfig>
+    
+    <!-- Logging Configuration -->
+    <LoggingConfig>
+        <LogLevel>INFO</LogLevel>
+        <LogFile>deriv_bot.log</LogFile>
+        <MaxFileSize>10</MaxFileSize> <!-- in MB -->
+        <BackupCount>5</BackupCount>
+    </LoggingConfig>
+    
+    <!-- Risk Management -->
+    <RiskManagement>
+        <MaxDailyLoss>200.00</MaxDailyLoss>
+        <MaxConsecutiveLosses>5</MaxConsecutiveLosses>
+        <TradeCooldown>30</TradeCooldown> <!-- in seconds -->
+    </RiskManagement>
+</DerivBotConfig>'''
+
+    with open('deriv_bot_config.xml', 'w') as f:
+        f.write(xml_content)
+    
+    print("✓ Configuration file 'deriv_bot_config.xml' created successfully!")
+
+def create_config_loader():
+    config_loader_code = '''
+import xml.etree.ElementTree as ET
+import os
+
+class DerivConfig:
+    def __init__(self, config_path="deriv_bot_config.xml"):
+        self.config_path = config_path
+        self.config = self.load_config()
+    
+    def load_config(self):
+        """Load configuration from XML file"""
+        if not os.path.exists(self.config_path):
+            raise FileNotFoundError(f"Configuration file {self.config_path} not found")
+        
+        tree = ET.parse(self.config_path)
+        root = tree.getroot()
+        
+        config = {
+            'api': {
+                'token': root.findtext('ApiConfig/Token'),
+                'app_id': root.findtext('ApiConfig/AppId'),
+                'ws_endpoint': root.findtext('ApiConfig/WebSocketEndpoint')
+            },
+            'trading': {
+                'symbol': root.findtext('TradingConfig/Symbol'),
+                'currency': root.findtext('TradingConfig/Currency'),
+                'stake': float(root.findtext('TradingConfig/Stake')),
+                'duration': int(root.findtext('TradingConfig/Duration')),
+                'duration_unit': root.findtext('TradingConfig/DurationUnit'),
+                'contract_type': root.findtext('TradingConfig/ContractType')
+            },
+            'strategy': {
+                'name': root.findtext('StrategyConfig/Name'),
+                'under_threshold': int(root.findtext('StrategyConfig/UnderThreshold')),
+                'over_threshold': int(root.findtext('StrategyConfig/OverThreshold')),
+                'max_trades_per_minute': int(root.findtext('StrategyConfig/MaxTradesPerMinute')),
+                'stop_loss': float(root.findtext('StrategyConfig/StopLoss')),
+                'take_profit': float(root.findtext('StrategyConfig/TakeProfit'))
+            },
+            'logging': {
+                'log_level': root.findtext('LoggingConfig/LogLevel'),
+                'log_file': root.findtext('LoggingConfig/LogFile'),
+                'max_file_size': int(root.findtext('LoggingConfig/MaxFileSize')),
+                'backup_count': int(root.findtext('LoggingConfig/BackupCount'))
+            },
+            'risk_management': {
+                'max_daily_loss': float(root.findtext('RiskManagement/MaxDailyLoss')),
+                'max_consecutive_losses': int(root.findtext('RiskManagement/MaxConsecutiveLosses')),
+                'trade_cooldown': int(root.findtext('RiskManagement/TradeCooldown'))
+            }
+        }
+        
+        return config
+    
+    def get(self, section, key):
+        """Get a configuration value"""
+        return self.config.get(section, {}).get(key)
+    
+    def get_api_config(self):
+        """Get API configuration"""
+        return self.config.get('api', {})
+    
+    def get_trading_config(self):
+        """Get trading configuration"""
+        return self.config.get('trading', {})
+    
+    def get_strategy_config(self):
+        """Get strategy configuration"""
+        return self.config.get('strategy', {})
+    
+    def get_logging_config(self):
+        """Get logging configuration"""
+        return self.config.get('logging', {})
+    
+    def get_risk_management_config(self):
+        """Get risk management configuration"""
+        return self.config.get('risk_management', {})
+'''
+
+    with open('deriv_config.py', 'w') as f:
+        f.write(config_loader_code)
+    
+    print("✓ Configuration loader 'deriv_config.py' created successfully!")
+
+def create_enhanced_bot():
+    bot_code = '''
+"""
+Enhanced Deriv digit trading bot with XML configuration.
+- Uses websocket-client to connect to Deriv WebSocket API.
+- Authorizes, listens to ticks, requests proposal, buys contract.
+- Configurable strategy parameters.
+
+IMPORTANT: Test on a demo account. This script is educational; use at your own risk.
+"""
+
+import json
+import time
+import threading
+import traceback
+import logging
+from logging.handlers import RotatingFileHandler
+from datetime import datetime, timedelta
+from websocket import create_connection, WebSocketConnectionClosedException
+
+# Import our configuration loader
+from deriv_config import DerivConfig
+
+class DerivBot:
+    def __init__(self):
+        self.config = DerivConfig()
+        self.ws = None
+        self.req_id = 0
+        self.lock = threading.Lock()
+        self.last_tick = None
+        self.trade_count = 0
+        self.reset_time = datetime.now()
+        self.consecutive_losses = 0
+        self.daily_pnl = 0.0
+        self.last_trade_time = datetime.now() - timedelta(minutes=5)
+        
+        # Setup logging
+        self.setup_logging()
+        
+    def setup_logging(self):
+        """Configure logging based on XML config"""
+        log_config = self.config.get_logging_config()
+        log_level = getattr(logging, log_config['log_level'], logging.INFO)
+        
+        self.logger = logging.getLogger('DerivBot')
+        self.logger.setLevel(log_level)
+        
+        # Create formatter
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        
+        # File handler with rotation
+        file_handler = RotatingFileHandler(
+            log_config['log_file'],
+            maxBytes=log_config['max_file_size'] * 1024 * 1024,
+            backupCount=log_config['backup_count']
+        )
+        file_handler.setFormatter(formatter)
+        self.logger.addHandler(file_handler)
+        
+        # Console handler
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        self.logger.addHandler(console_handler)
+        
+    def _next_req_id(self):
+        with self.lock:
+            self.req_id += 1
+            return str(self.req_id)
+
+    def connect(self):
+        api_config = self.config.get_api_config()
+        self.logger.info("Connecting to Deriv WS...")
+        self.ws = create_connection(f"{api_config['ws_endpoint']}?app_id={api_config['app_id']}", timeout=15)
+        self.logger.info("Connected.")
+        self.authorize()
+
+    def authorize(self):
+        """Send authorize call using token"""
+        api_config = self.config.get_api_config()
+        req = {"authorize": api_config['token'], "req_id": self._next_req_id()}
+        self.ws.send(json.dumps(req))
+        resp = json.loads(self.ws.recv())
+        self.logger.info("Authorize response: %s", resp)
+
+    def subscribe_ticks(self, symbol):
+        """Subscribe to ticks stream for symbol"""
+        request = {"ticks": symbol, "subscribe": 1, "req_id": self._next_req_id()}
+        self.ws.send(json.dumps(request))
+        self.logger.info("Subscribed to ticks for %s", symbol)
+
+    def request_price_proposal(self, digit=None):
+        """Request a proposal for digit contract"""
+        trading_config = self.config.get_trading_config()
+        strategy_config = self.config.get_strategy_config()
+        
+        proposal_req = {
+            "proposal": 1,
+            "amount": trading_config['stake'],
+            "basis": "payout",
+            "contract_type": trading_config['contract_type'],
+            "symbol": trading_config['symbol'],
+            "duration": trading_config['duration'],
+            "duration_unit": trading_config['duration_unit'],
+            **({"digit": digit} if digit is not None else {})
+        }
+        proposal_req["req_id"] = self._next_req_id()
+        self.ws.send(json.dumps(proposal_req))
+        data = json.loads(self.ws.recv())
+        return data
+
+    def buy_contract(self, buy_id=None, price=None, params=None):
+        """Buy a contract"""
+        buy_req = {"buy": buy_id if buy_id is not None else 1}
+        if price is not None:
+            buy_req["price"] = price
+        if params:
+            buy_req["parameters"] = params
+        buy_req["req_id"] = self._next_req_id()
+        self.ws.send(json.dumps(buy_req))
+        resp = json.loads(self.ws.recv())
+        return resp
+
+    def check_risk_management(self):
+        """Check if we should trade based on risk management rules"""
+        risk_config = self.config.get_risk_management_config()
+        
+        # Check daily loss limit
+        if self.daily_pnl <= -risk_config['max_daily_loss']:
+            self.logger.warning("Daily loss limit reached. Stopping trading.")
+            return False
+            
+        # Check consecutive losses
+        if self.consecutive_losses >= risk_config['max_consecutive_losses']:
+            self.logger.warning("Max consecutive losses reached. Stopping trading.")
+            return False
+            
+        # Check trade cooldown
+        now = datetime.now()
+        if (now - self.last_trade_time).total_seconds() < risk_config['trade_cooldown']:
+            self.logger.debug("In trade cooldown period.")
+            return False
+            
+        # Reset trade count if needed
+        if datetime.now() > self.reset_time:
+            self.trade_count = 0
+            self.reset_time = datetime.now() + timedelta(minutes=1)
+            
+        # Check max trades per minute
+        strategy_config = self.config.get_strategy_config()
+        if self.trade_count >= strategy_config['max_trades_per_minute']:
+            self.logger.debug("Max trades per minute reached.")
+            return False
+            
+        return True
+
+    def handle_tick_msg(self, msg):
+        """Handle incoming tick message"""
+        try:
+            tick = msg.get("tick")
+            if not tick:
+                return
+                
+            quote = tick.get("quote")
+            if quote is None:
+                return
+                
+            # Extract last digit from quote
+            quote_str = str(quote)
+            last_digit_char = None
+            for ch in reversed(quote_str):
+                if ch.isdigit():
+                    last_digit_char = ch
+                    break
+                    
+            if last_digit_char is None:
+                return
+                
+            last_digit = int(last_digit_char)
+            self.last_tick = last_digit
+            self.logger.info("Tick: %s -> last digit %s", quote, last_digit)
+
+            # Check risk management before trading
+            if not self.check_risk_management():
+                return
+
+            strategy_config = self.config.get_strategy_config()
+            
+            # Strategy: trade when digit is under threshold or over threshold
+            if last_digit < strategy_config['under_threshold']:
+                self.logger.info("Signal: Under %s (digit %s) -> requesting proposal...", 
+                               strategy_config['under_threshold'], last_digit)
+                self.execute_trade(last_digit)
+                
+            elif last_digit > strategy_config['over_threshold']:
+                self.logger.info("Signal: Over %s (digit %s) -> requesting proposal...", 
+                               strategy_config['over_threshold'], last_digit)
+                self.execute_trade(last_digit)
+                
+        except Exception as e:
+            self.logger.error("Error handling tick: %s", e)
+            self.logger.error(traceback.format_exc())
+
+    def execute_trade(self, digit):
+        """Execute a trade for the given digit"""
+        try:
+            proposal = self.request_price_proposal(digit=digit)
+            self.logger.info("Proposal: %s", proposal)
+            
+            prop = proposal.get("proposal") or proposal.get("echo", {}).get("proposal")
+            if prop and prop.get("id"):
+                buy_resp = self.buy_contract(buy_id=prop["id"])
+                self.logger.info("Buy response: %s", buy_resp)
+                
+                # Update trade statistics
+                self.trade_count += 1
+                self.last_trade_time = datetime.now()
+                
+                # Check if trade was successful and update PnL
+                if "error" in buy_resp:
+                    self.consecutive_losses += 1
+                else:
+                    # Here you would parse the actual PnL from the response
+                    # This is a simplified example
+                    profit = 9.0  # Example fixed profit
+                    self.daily_pnl += profit
+                    self.consecutive_losses = 0
+                    
+        except Exception as e:
+            self.logger.error("Error executing trade: %s", e)
+            self.logger.error(traceback.format_exc())
+
+    def run(self):
+        try:
+            trading_config = self.config.get_trading_config()
+            self.connect()
+            self.subscribe_ticks(trading_config['symbol'])
+            
+            # Keep reading messages
+            while True:
+                try:
+                    raw = self.ws.recv()
+                except WebSocketConnectionClosedException:
+                    self.logger.error("Connection closed by server. Exiting.")
+                    break
+                    
+                if not raw:
+                    continue
+                    
+                msg = json.loads(raw)
+                
+                # Handle different message types
+                if "tick" in msg:
+                    self.handle_tick_msg(msg)
+                elif "authorize" in msg:
+                    self.logger.info("Authorized response: %s", msg)
+                elif "proposal" in msg:
+                    self.logger.info("Proposal response: %s", msg)
+                elif "buy" in msg or "transaction" in msg:
+                    self.logger.info("Buy/transaction response: %s", msg)
+                    
+        except Exception as e:
+            self.logger.error("Fatal error: %s", e)
+            self.logger.error(traceback.format_exc())
+        finally:
+            try:
+                if self.ws:
+                    self.ws.close()
+            except:
+                pass
+
+if __name__ == "__main__":
+    bot = DerivBot()
+    bot.run()
+'''
+
+    with open('enhanced_deriv_bot.py', 'w') as f:
+        f.write(bot_code)
+    
+    print("✓ Enhanced bot 'enhanced_deriv_bot.py' created successfully!")
+
+def main():
+    print("Creating Deriv Bot Configuration Files...")
+    print("=" * 50)
+    
+    create_xml_config()
+    create_config_loader()
+    create_enhanced_bot()
+    
+    print("=" * 50)
+    print("All files created successfully!")
+    print("\\nNext steps:")
+    print("1. Edit 'deriv_bot_config.xml' and add your API token")
+    print("2. Run the enhanced bot: python enhanced_deriv_bot.py")
+    print("3. Monitor logs in 'deriv_bot.log'")
+
+if __name__ == "__main__":
+    main()
